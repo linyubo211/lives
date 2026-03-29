@@ -1,0 +1,50 @@
+name: 直播源爆破扫描
+
+on:
+  schedule:
+    # 每周一、四凌晨 1:00 自动运行 (UTC 17:00)
+    - cron: '20 */4 * * *'
+  workflow_dispatch: # 支持手动点击运行
+
+jobs:
+  scanner:
+    runs-on: ubuntu-latest
+    # 设置超时时间，防止爆破任务卡死消耗额度（建议 1 小时左右）
+    timeout-minutes: 90
+
+    steps:
+      - name: 🚚 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🐍 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' # 推荐 3.12 稳定性更好
+
+      - name: 📦 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install aiohttp tqdm
+
+      - name: 🚀 执行扫描脚本
+        run: |
+          # 确保 py 目录存在，防止脚本写入报错
+          mkdir -p py
+          # 执行脚本，GitHub 默认是 Linux，并发会自动切换到 1000
+          python py/hb_telecom_scan.py
+
+      - name: 💾 提交扫描结果
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # 添加生成的文件和历史记录文件
+          git add py/hb_telecom.m3u py/hb_telecom_tvbox.txt py/scanned_history.json
+          
+          # 检查是否有变动，有则提交
+          if git diff --staged --quiet; then
+            echo "没有发现新变动，跳过提交。"
+          else
+            git commit -m "📡 自动更新湖北电信直播源: $(date +'%Y-%m-%d %H:%M:%S')"
+            git push
+          fi
