@@ -229,18 +229,16 @@ source_urls = [
     'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/cn.m3u',
     'https://raw.githubusercontent.com/suxuang/myIPTV/main/ipv4.m3u',
     'https://raw.githubusercontent.com/qunhui201/TVlogo/refs/heads/main/output_with_logo.m3u',
-    'https://raw.githubusercontent.com/kimwang1978/collect-tv-txt',/main/others_output.txt',
+    'https://raw.githubusercontent.com/kimwang1978/collect-tv-txt/main/others_output.txt',
     'https://raw.githubusercontent.com/vbskycn/iptv/master/tv/iptv4.txt',
-    'https://raw.githubusercontent.com/ioptu/IPTV.txt',2m3u',.player/refs/heads/main/migu_merged.m3u',
-    'https://raw.githubusercontent.com/ioptu/IPTV.txt',2m3u',.player/refs/heads/main/yp.qqqtv.top.m3u',
-    'https://raw.githubusercontent.com/ioptu/IPTV.txt',2m3u',.player/refs/heads/main/php.jdshipin.com.m3u',
     'https://live.zbds.top/tv/iptv4.txt',
     'https://raw.githubusercontent.com/zhzebe/iptv/refs/heads/main/ipv4.txt',
     'https://raw.githubusercontent.com/Supprise0901/TVBox_live/refs/heads/main/live.txt',
-    'https://raw.githubusercontent.com/fanmingming/live/refs/heads/main/tv/m3u',/ipv6.m3u', 
-    'https://raw.githubusercontent.com/q1017673817/iptvz/refs/heads/main/zubo.tx
+    'https://raw.githubusercontent.com/fanmingming/live/refs/heads/main/tv/m3u/ipv6.m3u', 
+    'https://raw.githubusercontent.com/q1017673817/iptvz/refs/heads/main/zubo.txt'
     'https://raw.githubusercontent.com/RaycornM/TVbox-IPTV/refs/heads/main/Tivi.m3u',
     'https://raw.githubusercontent.com/suxuang/myIPTV/refs/heads/main/ipv4.m3u',
+
     'https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/ipv6.m3u', # FMM
     'https://raw.githubusercontent.com/Kimentanm/aptv/refs/heads/master/m3u/iptv.m3u',
     "https://raw.githubusercontent.com/Guovin/iptv-api/gd/output/result.m3u",  # guovin 每日更新
