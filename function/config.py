@@ -149,6 +149,7 @@ black_lst = [
     'kkk.jjjj.jiduo.me',
     'stream1.freetv.fun',
     ':9901udp',
+    'iptv.catvod.com',
     'ali-m-l.cztv.com/channels/lantian/channel21/1080p.m3u8',
     '120.76.248.139',
     '公众号玉玉软件库',
