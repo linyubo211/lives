@@ -5,7 +5,7 @@ import json
 import re
 import sys
 import warnings
-import random # 记得在脚本顶部添加这个导入
+import random
 from tqdm import tqdm
 
 # 屏蔽 Python 3.14+ 的弃用警告
@@ -20,7 +20,16 @@ TVBOX_FILE = "py/hb_telecom_tvbox.txt"
 HISTORY_FILE = "py/scanned_history.json"
 CONCURRENCY = 400 if sys.platform == 'win32' else 1000 
 
+# 🚫 黑名单列表：直接在这里填写那些无流量、失效的 IP
+IP_BLACKLIST = [
+    "42.231.62.137", 
+    "42.231.1.1",
+    # "在此继续添加你想屏蔽的IP..."
+]
+
 PROVINCIAL_LOGIC = ['浙江卫视', '湖南卫视', '东方卫视', '北京卫视', '江苏卫视', '江西卫视', '深圳卫视', '湖北卫视', '吉林卫视', '四川卫视', '天津卫视', '宁夏卫视', '安徽卫视', '山东卫视', '山西卫视', '广东卫视', '广西卫视', '东南卫视', '内蒙古卫视', '黑龙江卫视', '新疆卫视', '河北卫视', '河南卫视', '云南卫视', '海南卫视', '甘肃卫视', '西藏卫视', '贵州卫视', '辽宁卫视', '陕西卫视', '青海卫视', '康巴卫视', '三沙卫视', '大湾区卫视']
+
+# ... (update_history_log 和 clean_and_weight 函数保持不变) ...
 
 def update_history_log(current_ips):
     existing_history = []
@@ -29,7 +38,7 @@ def update_history_log(current_ips):
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 existing_history = json.load(f)
         except: pass
-    new_ips = [ip for ip in current_ips if ip not in existing_history]
+    new_ips = [ip for ip in current_ips if ip not in existing_history and ip not in IP_BLACKLIST]
     if new_ips:
         updated_history = list(set(existing_history + new_ips))
         with open(HISTORY_FILE, "w", encoding="utf-8") as f:
@@ -51,41 +60,28 @@ async def check_host_alive(semaphore, ip, pbar):
     async with semaphore:
         writer = None
         try:
-            # 增加一点点超时缓冲，降低并发压力
             fut = asyncio.open_connection(ip, TARGET_PORT)
             reader, writer = await asyncio.wait_for(fut, timeout=2.0)
             return ip
         except:
             return None
         finally:
-            # 安全地关闭，不抛出异常
             if writer:
                 try:
                     writer.close()
-                    # 在高并发下不一定要 wait_closed()，可以直接让循环处理
                 except:
                     pass
-            pbar.update(1)            
-
-
+            pbar.update(1)
 
 async def fetch_data(session, ip_list):
-    """
-    针对已确认存活的 IP，分批、限速、带重试地请求 9901 端口的数据
-    """
     results = []
-    # 核心：限制并发。即使扫描出了 100 个存活 IP，我们也只允许 5 个同时进行数据交换
-    # 这样可以给服务器留出 CPU 响应时间，不容易超时
     fetch_limit = asyncio.Semaphore(5) 
 
     async def fetch_single_ip(ip):
         async with fetch_limit:
-            # 给予 3 次重试机会
             for attempt in range(3):
                 try:
                     url = f"http://{ip}:{TARGET_PORT}{CHECK_PATH}"
-                    # 关键：将请求超时增加到 10 秒
-                    # 有些酒店源扫描 JSON 列表非常慢，2-5 秒是不够的
                     async with session.get(url, timeout=10) as resp:
                         if resp.status == 200:
                             data = await resp.json(content_type=None)
@@ -102,23 +98,16 @@ async def fetch_data(session, ip_list):
                                         "weight": float(weight),
                                         "ip": ip
                                     })
-                                # 只要抓取成功，就打印一下，方便在 Actions 日志里看
                                 print(f"✅ [成功] {ip}:{TARGET_PORT} | 台数: {len(chunk)}")
                                 return chunk
-                except Exception as e:
-                    # 如果不是最后一次尝试，就随机等一下再试
+                except Exception:
                     if attempt < 2:
-                        wait_time = random.uniform(2, 5) # 错峰 2-5 秒
-                        await asyncio.sleep(wait_time)
+                        await asyncio.sleep(random.uniform(2, 5))
                     continue
-            
-            print(f"❌ [失败] {ip}:{TARGET_PORT} 响应超时或格式错误")
             return []
 
-    # 并行启动所有存活 IP 的抓取任务，但受 fetch_limit 约束
     tasks = [fetch_single_ip(ip) for ip in ip_list]
     all_chunks = await asyncio.gather(*tasks)
-    
     for chunk in all_chunks:
         results.extend(chunk)
     return results
@@ -130,21 +119,22 @@ async def main():
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 history_ips = json.load(f)
-            print(f"📜 发现历史记录，包含 {len(history_ips)} 个已知 IP。")
-        except:
-            pass
+        except: pass
 
     # --- 2. 生成全量爆破 IP 列表 ---
-    print(f"🚀 开始探测 {TARGET_PREFIX}.x.y (端口: {TARGET_PORT})")
     scan_ips = [f"{TARGET_PREFIX}.{i}.{j}" for i in range(256) for j in range(256)]
     
-    # --- 3. 合并：历史 IP 放在最前面优先执行 ---
-    # 使用 set 去重，确保不会重复扫描
-    all_ips = list(dict.fromkeys(history_ips + scan_ips))
+    # --- 3. 合并并过滤黑名单 ---
+    # 先合并历史和扫描列表，然后排除黑名单中的 IP
+    all_ips = [ip for ip in dict.fromkeys(history_ips + scan_ips) if ip not in IP_BLACKLIST]
+    
+    if IP_BLACKLIST:
+        print(f"🛡️ 已从扫描列表中屏蔽 {len(IP_BLACKLIST)} 个黑名单 IP。")
     
     semaphore = asyncio.Semaphore(CONCURRENCY)
     alive_ips = []
 
+    print(f"🚀 开始探测 {len(all_ips)} 个目标 (端口: {TARGET_PORT})")
     with tqdm(total=len(all_ips), desc="🔍 扫描进度", unit="IP", colour="cyan") as pbar:
         async def run_task(ip):
             res = await check_host_alive(semaphore, ip, pbar)
@@ -154,16 +144,14 @@ async def main():
         tasks = []
         for ip in all_ips:
             tasks.append(run_task(ip))
-            # 控制协程积压，每 2000 个任务处理一次
             if len(tasks) >= 2000: 
                 await asyncio.gather(*tasks)
                 tasks = []
-        
         if tasks:
             await asyncio.gather(*tasks)
     
     print(f"\n📡 探测完成，共找到 {len(alive_ips)} 个活跃服务器。")
-    # ... 后面获取数据的逻辑保持不变 ...
+
     if alive_ips:
         async with aiohttp.ClientSession() as session:
             all_channels = await fetch_data(session, alive_ips)
@@ -190,7 +178,6 @@ async def main():
         print("❌ 未发现任何有效直播源。")
 
 if __name__ == "__main__":
-    # 针对 Python 3.14+ 自动处理策略
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
