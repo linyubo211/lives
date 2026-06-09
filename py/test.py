@@ -109,7 +109,7 @@ def process_subpage(url, folder_path):
 
 # 主函数
 def main():
-    folder_path = 'scripts/aaa'
+    folder_path = 'aaa'
     delete_old_m3u_files(folder_path)
     
     base_urls = [
