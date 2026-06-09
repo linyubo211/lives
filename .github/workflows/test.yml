@@ -23,15 +23,15 @@ jobs:
           pip install requests beautifulsoup4
         
       - name: Run Python script
-        run: python scripts/py/test1.py
+        run: python py/test1.py
 
       - name: Force update file timestamps
         run: |
-          touch scripts/aaa/*.m3u
+          touch aaa/*.m3u
 
       - name: Check for generated files
         run: |
-          ls -la scripts/aaa/  # 列出目录中的所有文件，确认 M3U 文件是否存在
+          ls -la aaa/  # 列出目录中的所有文件，确认 M3U 文件是否存在
 
       - name: Configure Git
         run: |
