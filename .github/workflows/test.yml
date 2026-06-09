@@ -23,7 +23,7 @@ jobs:
           pip install requests beautifulsoup4
         
       - name: Run Python script
-        run: python py/test1.py
+        run: python py/test.py
 
       - name: Force update file timestamps
         run: |
