@@ -13,11 +13,13 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # --- 核心配置：支持不同网段对应不同端口 ---
 TARGET_CONFIG = {
-    "125.42": 9901,  
+    "1.192": 9901,  
     "171.8": 9901,
-    "221.13": 9001,
-    "125.42": 9003,  
-    "42.238": 85
+    "1.197": 9001,
+    "171.14": 9001, 
+    "123.163": 9001,  
+    "221.13": 9001,  
+    "123.149": 9901
 }
 # 💡 修复一：补全 key=txiptv 的 "v"
 CHECK_PATH = "/iptv/live/1000.json?key=txiptv"
