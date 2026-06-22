@@ -18,11 +18,11 @@ TARGET_CONFIG = {
     "106.46": 9000,
     "125.42": 5566,    
 }
-CHECK_PATH = "/iptv/live/1000.json?key=txipt"
+# 💡 修复一：补全 key=txiptv 的 "v"
+CHECK_PATH = "/iptv/live/1000.json?key=txiptv"
 M3U_FILE = "py/hb_telecom.m3u"
 TVBOX_FILE = "py/hb_telecom_tvbox.txt"
 HISTORY_FILE = "py/scanned_history.json"
-# GitHub Actions 环境保持 800 并发，兼顾速度与稳定性，防止因瞬间并发太高被运营商防火墙丢包
 CONCURRENCY = 200 if sys.platform == 'win32' else 800  
 
 # 🚫 黑名单列表
@@ -30,6 +30,13 @@ IP_BLACKLIST = [
     "42.231.62.137", 
     "42.231.1.1",
 ]
+
+# 💡 修复二：加入标准浏览器请求头，防止服务端返回 400 Bad Request
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9"
+}
 
 PROVINCIAL_LOGIC = ['浙江卫视', '湖南卫视', '东方卫视', '北京卫视', '江苏卫视', '江西卫视', '深圳卫视', '湖北卫视', '吉林卫视', '四川卫视', '天津卫视', '宁夏卫视', '安徽卫视', '山东卫视', '山西卫视', '广东卫视', '广西卫视', '东南卫视', '内蒙古卫视', '黑龙江卫视', '新疆卫视', '河北卫视', '河南卫视', '云南卫视', '海南卫视', '甘肃卫视', '西藏卫视', '贵州卫视', '辽宁卫视', '陕西卫视', '青海卫视', '康巴卫视', '三沙卫视', '大湾区卫视']
 
@@ -58,17 +65,13 @@ def clean_and_weight(name):
         if p in name: return p, 100 + i 
     return name, 999
 
-# 修改探测函数：只要 TCP 握手成功，利用 tqdm.write 实时向控制台输出日志
 async def check_host_alive(semaphore, ip, port, pbar):
     async with semaphore:
         writer = None
         try:
             fut = asyncio.open_connection(ip, port)
-            reader, writer = await asyncio.wait_for(fut, timeout=2.5)  # 适当放宽超时，保障稳定性
-            
-            # 📢 实时日志改进：只要对应端口有反应，立即打印（不会破坏 tqdm 进度条结构）
-            tqdm.write(f"📡 [发现响应] {ip}:{port} 端口处于开放状态，准备抓取数据...")
-            
+            reader, writer = await asyncio.wait_for(fut, timeout=2.5)
+            tqdm.write(f"📡 [发现响应] {ip}:{port} 端口开放，准备伪装请求抓取数据...")
             return (ip, port)
         except:
             return None
@@ -80,7 +83,7 @@ async def check_host_alive(semaphore, ip, port, pbar):
                     pass
             pbar.update(1)
 
-# 获取数据函数：提取各自网段绑定的独立 port 拼接 URL
+# 获取数据函数：带 Headers 伪装请求，并支持详细报错输出
 async def fetch_data(session, target_list):
     results = []
     fetch_limit = asyncio.Semaphore(5) 
@@ -90,37 +93,51 @@ async def fetch_data(session, target_list):
             for attempt in range(3):
                 try:
                     url = f"http://{ip}:{port}{CHECK_PATH}"
-                    async with session.get(url, timeout=10) as resp:
-                        if resp.status == 200:
+                    # 💡 传入伪装 headers
+                    async with session.get(url, headers=DEFAULT_HEADERS, timeout=10) as resp:
+                        if resp.status != 200:
+                            print(f"⚠️ [接口失败] {ip}:{port} | HTTP状态码: {resp.status} (带请求头仍400说明Key或参数需要调整)")
+                            return []
+                        
+                        try:
                             data = await resp.json(content_type=None)
-                            if data.get("code") == 0 and "data" in data:
-                                chunk = []
-                                for item in data["data"]:
-                                    name = item.get("name", "")
-                                    raw_url = item.get("url", "")
-                                    chid = item.get("chid", "")
-                                    
-                                    # 根据当前 IP 的专属端口进行拼接
-                                    if "tsfile" in raw_url.lower() or ".m3u8" in raw_url.lower():
-                                        final_url = f"http://{ip}:{port}{raw_url}"
-                                    else:
-                                        formatted_chid = str(chid).zfill(4)
-                                        final_url = f"http://{ip}:{port}/tsfile/live/{formatted_chid}_1.m3u8?key=txiptv&playlive=1&authid=0"
+                        except Exception as je:
+                            print(f"⚠️ [JSON解析错误] {ip}:{port} | 无法解析为JSON格式: {je}")
+                            return []
+                        
+                        # 宽松匹配：支持 code=0，或者没有 code 只要包含 data 列表也行
+                        if ("data" in data) and (data.get("code") == 0 or "code" not in data or data.get("code") == "0"):
+                            chunk = []
+                            for item in data["data"]:
+                                name = item.get("name", "")
+                                raw_url = item.get("url", "")
+                                chid = item.get("chid", "")
+                                
+                                if "tsfile" in raw_url.lower() or ".m3u8" in raw_url.lower():
+                                    final_url = f"http://{ip}:{port}{raw_url}"
+                                else:
+                                    formatted_chid = str(chid).zfill(4)
+                                    final_url = f"http://{ip}:{port}/tsfile/live/{formatted_chid}_1.m3u8?key=txiptv&playlive=1&authid=0"
 
-                                    clean_name, weight = clean_and_weight(name)
-                                    cat = "央视" if weight < 100 else ("卫视" if weight < 300 else "地方")
-                                    chunk.append({
-                                        "name": clean_name,
-                                        "url": final_url,
-                                        "cat": cat,
-                                        "weight": float(weight),
-                                        "ip": ip
-                                    })
-                                print(f"✅ [成功提取数据] {ip}:{port} | 频道总数: {len(chunk)}")
-                                return chunk
-                except Exception:
+                                clean_name, weight = clean_and_weight(name)
+                                cat = "央视" if weight < 100 else ("卫视" if weight < 300 else "地方")
+                                chunk.append({
+                                    "name": clean_name,
+                                    "url": final_url,
+                                    "cat": cat,
+                                    "weight": float(weight),
+                                    "ip": ip
+                                })
+                            print(f"✅ [成功提取] {ip}:{port} | 抓取到频道数: {len(chunk)}")
+                            return chunk
+                        else:
+                            print(f"⚠️ [数据结构不符] {ip}:{port} | 键包含值: {list(data.keys())}")
+                            return []
+                except Exception as e:
                     if attempt < 2:
                         await asyncio.sleep(random.uniform(2, 5))
+                    else:
+                        print(f"❌ [请求异常] {ip}:{port} | 原因: {e}")
                     continue
             return []
 
@@ -132,7 +149,6 @@ async def fetch_data(session, target_list):
 
 async def main():
     history_targets = []
-    # 读取历史记录并智能匹配旧数据的端口号
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -145,10 +161,9 @@ async def main():
                             matched = True
                             break
                     if not matched:
-                        history_targets.append((ip, 8082))  # 默认兜底端口
+                        history_targets.append((ip, 8082))  
         except: pass
 
-    # 生成带独立端口的任务列表
     scan_targets = []
     for prefix, port in TARGET_CONFIG.items():
         for i in range(256):
@@ -157,18 +172,15 @@ async def main():
                 if ip not in IP_BLACKLIST:
                     scan_targets.append((ip, port))
 
-    # 合并、去重
     all_targets = list(dict.fromkeys(history_targets + scan_targets))
-    
     if IP_BLACKLIST:
         print(f"🛡️ 已从扫描列表中屏蔽 {len(IP_BLACKLIST)} 个黑名单 IP。")
     
     semaphore = asyncio.Semaphore(CONCURRENCY)
     alive_targets = []
 
-    print(f"🚀 开始探测 {len(all_targets)} 个目标（按网段动态分配对应端口）")
+    print(f"🚀 开始探测 {len(all_targets)} 个目标（按网段分配对应端口）")
     
-    # 📢 流式并发改进：使用 asyncio.gather 配合内部信号量做到实时产生日志，不再批量憋着
     with tqdm(total=len(all_targets), desc="🔍 扫描进度", unit="IP", colour="cyan") as pbar:
         async def run_task(ip, port):
             res = await check_host_alive(semaphore, ip, port, pbar)
@@ -178,7 +190,7 @@ async def main():
         tasks = [run_task(ip, port) for ip, port in all_targets]
         await asyncio.gather(*tasks)
     
-    print(f"\n📡 探测完成，共找到 {len(alive_targets)} 个有响应的服务器，开始进入接口抓取环节...")
+    print(f"\n📡 探测完成，共找到 {len(alive_targets)} 个有响应的服务器，开始伪装抓取...")
 
     if alive_targets:
         async with aiohttp.ClientSession() as session:
@@ -202,6 +214,8 @@ async def main():
             
             update_history_log(list(set([ch['ip'] for ch in all_channels])))
             print(f"✅ 任务成功！生成有效源总条数: {len(all_channels)}")
+        else:
+            print("❌ 数据提取阶段结束：未能从响应服务器中解析出有效节目单。")
     else:
         print("❌ 未发现任何有响应的活跃直播源。")
 
