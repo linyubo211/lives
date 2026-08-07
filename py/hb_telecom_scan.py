@@ -13,9 +13,9 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # --- 核心配置：支持不同网段对应不同端口 ---
 TARGET_CONFIG = {
-    "171.8":8009，
-    "125.43":85，
-    "221.13":9901，
+    "171.8":8009,
+    "125.43":85,
+    "221.13":9901,
     "172.12": 9901
 }
 # 💡 修复一：补全 key=txiptv 的 "v"
